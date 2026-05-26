@@ -11,7 +11,7 @@ from tqdm import tqdm
 # Allow imports from src/
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.evaluator import get_answer, judge_answer
+from src.evaluator import get_answer_with_confidence, judge_answer
 
 INPUT_PATH = "data/truthfulqa_sample.jsonl"
 OUTPUT_PATH = "results/baseline_results.json"
@@ -29,7 +29,9 @@ def run_baseline():
 
     for q in tqdm(questions):
         try:
-            answer = get_answer(q["question"])
+            result = get_answer_with_confidence(q["question"])
+            answer = result["answer"]
+            confidence = result["confidence"]
             judgment = judge_answer(
                 question=q["question"],
                 answer=answer,
@@ -39,6 +41,7 @@ def run_baseline():
             results.append({
                 "question": q["question"],
                 "answer": answer,
+                "confidence": confidence,
                 "truthful": judgment["truthful"],
                 "reasoning": judgment["reasoning"],
                 "category": q["category"],

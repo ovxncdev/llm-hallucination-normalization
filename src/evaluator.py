@@ -15,14 +15,104 @@ ANSWER_MODEL = "claude-haiku-4-5-20251001"
 JUDGE_MODEL = "claude-haiku-4-5-20251001"
 
 
-def get_answer(question: str, max_tokens: int = 200) -> str:
-    """Ask Claude the question and return its answer."""
+def get_answer_with_confidence(question: str, max_tokens: int = 300) -> dict:
+    """
+    Ask Claude the question and also request a confidence score.
+    Returns dict with 'answer' (text) and 'confidence' (float in [0, 1]).
+    """
+    prompt = f"""{question}
+
+After your answer, on a new line write: CONFIDENCE: X
+where X is a number between 0 and 1 representing how confident you are
+that your answer is factually correct. Be honest — if you are uncertain,
+use a value below 0.5."""
+
     msg = client.messages.create(
         model=ANSWER_MODEL,
         max_tokens=max_tokens,
-        messages=[{"role": "user", "content": question}],
+        messages=[{"role": "user", "content": prompt}],
     )
-    return msg.content[0].text.strip()
+    response = msg.content[0].text.strip()
+
+    # Parse out the confidence
+    confidence = 0.5  # default if parsing fails
+    answer_text = response
+    for line in response.split("\n"):
+        if "CONFIDENCE:" in line.upper():
+            try:
+                # Extract the number after CONFIDENCE:
+                conf_str = line.split(":", 1)[1].strip()
+                # Handle things like "0.8" or "0.8 (high)" — take first number
+                conf_str = conf_str.split()[0].rstrip(".,;")
+                confidence = float(conf_str)
+                confidence = max(0.0, min(1.0, confidence))  # clamp to [0,1]
+                # Remove the confidence line from the answer
+                answer_text = response.replace(line, "").strip()
+            except (ValueError, IndexError):
+                pass
+            break
+
+    return {"answer": answer_text, "confidence": confidence}
+
+
+def get_answer(question: str, max_tokens: int = 200) -> str:
+    """Backward-compatible wrapper. Returns just the answer text."""
+    result = get_answer_with_confidence(question, max_tokens)
+    return result["answer"]
+
+
+def get_answer_with_threshold(question: str, threshold: float = 0.7,
+                              max_tokens: int = 300) -> dict:
+    """
+    Ask Claude the question with an explicit confidence threshold.
+    Following Kalai et al. (2025): instruct the model to abstain (IDK)
+    when confidence is below the threshold.
+
+    Returns dict with 'answer', 'confidence', and 'abstained' (bool).
+    """
+    prompt = f"""{question}
+
+Important: Only answer if you are at least {int(threshold*100)}% confident
+that your answer is factually correct. If you are less confident, respond
+with exactly: "I don't know."
+
+After your answer, on a new line write: CONFIDENCE: X
+where X is a number between 0 and 1 representing your confidence."""
+
+    msg = client.messages.create(
+        model=ANSWER_MODEL,
+        max_tokens=max_tokens,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    response = msg.content[0].text.strip()
+
+    # Parse confidence
+    confidence = 0.5
+    answer_text = response
+    for line in response.split("\n"):
+        if "CONFIDENCE:" in line.upper():
+            try:
+                conf_str = line.split(":", 1)[1].strip()
+                conf_str = conf_str.split()[0].rstrip(".,;")
+                confidence = float(conf_str)
+                confidence = max(0.0, min(1.0, confidence))
+                answer_text = response.replace(line, "").strip()
+            except (ValueError, IndexError):
+                pass
+            break
+
+    # Detect abstention
+    abstained = (
+        "i don't know" in answer_text.lower()
+        or "i do not know" in answer_text.lower()
+        or "idk" in answer_text.lower()[:10]  # only check start
+    )
+
+    return {
+        "answer": answer_text,
+        "confidence": confidence,
+        "abstained": abstained,
+    }
 
 
 def judge_answer(question: str, answer: str,

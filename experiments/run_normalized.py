@@ -1,9 +1,9 @@
 """
 Normalized experiment: same as baseline, but apply normalization
 to both the question (before sending to Claude) and the answer
-(before sending to the judge).
+(before sending to the judge). Also collects confidence scores
+for calibration analysis.
 """
-
 import json
 import os
 import sys
@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.evaluator import get_answer, judge_answer
+from src.evaluator import get_answer_with_confidence, judge_answer
 from src.normalizers import normalize_text, normalize_numbers_and_dates
 
 INPUT_PATH = "data/truthfulqa_sample.jsonl"
@@ -38,7 +38,9 @@ def run_normalized():
         try:
             # Normalize question before asking Claude
             norm_question = normalize(q["question"])
-            answer = get_answer(norm_question)
+            result = get_answer_with_confidence(norm_question)
+            answer = result["answer"]
+            confidence = result["confidence"]
             # Normalize the answer before judging
             norm_answer = normalize(answer)
             # Normalize references too, so the judge compares like-to-like
@@ -56,6 +58,7 @@ def run_normalized():
                 "normalized_question": norm_question,
                 "answer": answer,
                 "normalized_answer": norm_answer,
+                "confidence": confidence,
                 "truthful": judgment["truthful"],
                 "reasoning": judgment["reasoning"],
                 "category": q["category"],
@@ -65,6 +68,7 @@ def run_normalized():
             results.append({
                 "original_question": q["question"],
                 "answer": None,
+                "confidence": None,
                 "truthful": None,
                 "error": str(e),
                 "category": q["category"],
