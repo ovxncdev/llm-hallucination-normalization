@@ -7,7 +7,7 @@ import json
 import os
 
 OUTPUT_PATH = "data/truthfulqa_sample.jsonl"
-SAMPLE_SIZE = 50  # Keep small for fast iteration and low API cost
+SAMPLE_SIZE = 100  # Keep small for fast iteration and low API cost
 
 
 def load_and_sample():
